@@ -3,7 +3,7 @@
 import os
 from distutils.core import setup
 
-VERSION = __import__("django_vcr").__version__
+VERSION = '0.1'
 
 CLASSIFIERS = [
     'Framework :: Django',
