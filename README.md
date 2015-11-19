@@ -16,6 +16,7 @@ In settings, add the following keys:
 ```python
 VCR_CASSETTE_PATH  # full path to the directory where tapes will be stored
 VCR_STATE  # "recording", "replaying" or "stopped"
+```
 
 ## Implementation
 ```
