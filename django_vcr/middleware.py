@@ -1,4 +1,7 @@
+import json
+
 from django.conf import settings
+
 
 class VCRMiddleware:
     class SharedInstance:
@@ -29,7 +32,7 @@ class VCRMiddleware:
                 print("Could not open cassette. I/O Error({0}): {1}".format(e.errno, e.strerror))
             
             if self.state == "replaying":
-                cassette_string = cassette_file.read()
+                cassette_string = self.cassette_file.read()
                 try:
                     self.cassette_json = json.loads(cassette_string)
                 except ValueError as e:
@@ -44,9 +47,11 @@ class VCRMiddleware:
 
     shared_instance = None
 
-    def __init__(self):
+    @classmethod
+    def start(cls, cassette, state):
         if not VCRMiddleware.shared_instance:
             VCRMiddleware.shared_instance = VCRMiddleware.SharedInstance()
+        cls.shared_instance.init_with_state(cassette, state)
 
     def save(self):
         # If we're recording, write cassette JSON to cassette file.
@@ -57,6 +62,7 @@ class VCRMiddleware:
 
     def process_request(self, request):
         # If we're recording, we'll add this request to the cassette JSON.
+        # If we're replaying, we'll short-cut the networking and return an HTTPResponse.
         import ipdb; ipdb.set_trace()
         print("Process Request")
 
