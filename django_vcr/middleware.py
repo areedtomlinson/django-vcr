@@ -25,8 +25,8 @@ class VCRMiddleware:
               'stopped': None
             }
             if self.state not in vcr_states:
-                raise Exception("state must be one of ", acceptable_states)
- 
+                raise Exception("state must be one of ", vcr_states)
+
             if self.state == "stopped":
                 return
 
@@ -38,7 +38,7 @@ class VCRMiddleware:
             except IOError as e:
                 print("Could not open cassette. I/O Error({0}): {1}".format(e.errno, e.strerror))
                 raise
-            
+
             if self.state == "replaying":
                 cassette_string = self.cassette_file.read()
                 try:
@@ -61,13 +61,12 @@ class VCRMiddleware:
                     if pop_transaction:
                         # Push that change back to the JSON
                         self.cassette_json[url_key][method] = transactions
-                    return transaction 
+                    return transaction
             else:
-                return None    
+                return None
 
         def __init__(self):
             self.init_with_state("untitled_tape", "stopped")
-
 
     def default_comparator(url1, url2):
         # This default comparator ignores:
@@ -82,7 +81,7 @@ class VCRMiddleware:
         #    api/v1/endpoint
         #    api/v1/endpoint
         # and return True, because they're "equal"
-        
+
         # Remove case
         url1 = url1.lower()
         url2 = url2.lower()
@@ -100,9 +99,8 @@ class VCRMiddleware:
             url1 = '/'.join(url1.split('/')[1:])
         if '.' in url2.split('/')[0]:
             url2 = '/'.join(url2.split('/')[1:])
-        
-        return url1.lstrip('/').rstrip('/') == url2.lstrip('/').rstrip('/')
 
+        return url1.lstrip('/').rstrip('/') == url2.lstrip('/').rstrip('/')
 
     shared_instance = None
 
@@ -140,14 +138,12 @@ class VCRMiddleware:
                 body = transaction_json['response']['body']
                 response = HttpResponse(body)
                 for header in transaction_json['response']['headers'].items():
-                    response[header[0]]=header[1]
+                    response[header[0]] = header[1]
                 return response
             return None
-            #response = HTTPResponse
         print("Process Request")
 
     def process_response(self, request, response):
         # If we're recording, we'll add this response to the cassette JSON.
         print("Process View")
         return response
-
