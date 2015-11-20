@@ -20,7 +20,7 @@ class VCRMiddleware:
             self.state = state.lower()
             # Map VCR states to i/o operations:
             vcr_states = {
-              'recording': 'w',
+              'recording': 'w+',
               'replaying': 'r',
               'stopped': None
             }
@@ -49,19 +49,32 @@ class VCRMiddleware:
             elif self.state == "recording":
                 self.cassette_json = json.loads("{}")
 
-        def json_for_transaction(self, url, method, pop_transaction=False):
+        def matching_url_in_cassette(self, url, method):
             matching_urls = [url_key for url_key in self.cassette_json.keys() if self.url_comparator(url_key, url)]
             if len(matching_urls) > 0:
                 url_key = matching_urls[0]
+                return url_key
+            return None
+
+        def json_for_transaction(self, url, method, pop_transaction=False, transaction_to_add=None):
+            url_key = self.matching_url_in_cassette(url, method)
+            if url_key:
                 transactions_for_url = self.cassette_json[url_key]
                 method = method.upper()
                 transactions = transactions_for_url.get(method, None)
-                if len(transactions) > 0:
-                    transaction = transactions.pop(0)
-                    if pop_transaction:
-                        # Push that change back to the JSON
-                        self.cassette_json[url_key][method] = transactions
-                    return transaction
+                if transaction_to_add is not None:
+                    transactions.append(transaction_to_add)
+                    self.cassette_json[url_key][method] = transactions
+                    return transaction_to_add
+                else:
+                    if len(transactions) > 0:
+                        transaction = transactions.pop(0)
+                        if pop_transaction:
+                            # Push that change back to the JSON
+                            self.cassette_json[url_key][method] = transactions
+                        return transaction
+            elif transaction_to_add is not None:
+                self.cassette_json[url] = {method: [transaction_to_add]}
             else:
                 return None
 
@@ -103,6 +116,7 @@ class VCRMiddleware:
         return url1.lstrip('/').rstrip('/') == url2.lstrip('/').rstrip('/')
 
     shared_instance = None
+    transaction_json = {"request": None, "response": None}
 
     @classmethod
     def inst(cls):
@@ -119,18 +133,54 @@ class VCRMiddleware:
     def start(cls, cassette, state):
         cls.inst().init_with_state(cassette, state)
 
-    def save(self):
+    @classmethod
+    def save(cls):
         # If we're recording, write cassette JSON to cassette file.
         # TODO: determine if we need ensure_ascii=False (to make file UTF-8)
-        if self.shared_instance.state == "recording":
-            if hasattr(self.shared_instance, "cassette_file"):
-                json.dump(self.shared_instance.cassette_json, self.shared_instance.cassette_file)
+        if cls.inst().state == "recording":
+            if hasattr(cls.inst(), "cassette_file"):
+                json.dump(cls.inst().cassette_json, cls.inst().cassette_file, indent=2)
+                cls.inst().cassette_file.close()
+
+    def json_for_request(self, request):
+        # Serialize request into JSON.
+        request_json = {}
+        if request.method == "POST":
+            body = dict(request.POST.items())
+        elif request.method == "GET":
+            body = dict(request.GET.items())
+        else:
+            body = request.body.decode("utf-8")
+
+        headers = {}
+        valid_headers = ['CONTENT_TYPE', 'HTTP_COOKIE', 'CONTENT_LENGTH', 'SERVER_PROTOCOL']
+        for header in valid_headers:
+            headers[header] = request.META[header]
+
+        request_json['body'] = body
+        request_json['method'] = request.method
+        request_json['headers'] = headers
+        request_json['url'] = request.get_full_path()
+        return request_json
+
+    def json_for_response(self, response, request):
+        # Serialize response into JSON
+        url = request.get_full_path()
+
+        response_json = {}
+        response_json['code'] = response.status_code
+        response_json['body'] = response.data
+        response_json['headers'] = dict(response.items())
+        response_json['url'] = url
+        return response_json
 
     def process_request(self, request):
         # If we're recording, we'll add this request to the cassette JSON.
         # If we're replaying, we'll short-cut the networking and return an HTTPResponse.
         if self.inst().state == "recording":
-            # TODO: serialize request and add to cassette JSON
+            # Reset transaction JSON:
+            self.transaction_json = {"request": None, "response": None}
+            self.transaction_json['request'] = self.json_for_request(request)
             return None
         elif self.inst().state == "replaying":
             transaction_json = self.inst().json_for_transaction(request.get_full_path(), "POST", pop_transaction=True)
@@ -140,10 +190,12 @@ class VCRMiddleware:
                 for header in transaction_json['response']['headers'].items():
                     response[header[0]] = header[1]
                 return response
-            return None
-        print("Process Request")
+        return None
 
     def process_response(self, request, response):
         # If we're recording, we'll add this response to the cassette JSON.
-        print("Process View")
+        if self.inst().state == "recording":
+            # Reset transaction JSON:
+            self.transaction_json['response'] = self.json_for_response(response, request)
+            self.inst().json_for_transaction(request.get_full_path(), request.method, transaction_to_add=self.transaction_json)
         return response
