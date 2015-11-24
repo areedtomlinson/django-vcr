@@ -1,6 +1,9 @@
 import json
+
 from django.http import HttpResponse
 from django.conf import settings
+
+from utils import json_for_transaction, default_url_comparator, json_for_request, json_for_response
 
 
 class VCRMiddleware:
@@ -20,9 +23,9 @@ class VCRMiddleware:
             self.state = state.lower()
             # Map VCR states to i/o operations:
             vcr_states = {
-              'recording': 'w+',
-              'replaying': 'r',
-              'stopped': None
+                'recording': 'w+',
+                'replaying': 'r',
+                'stopped': None
             }
             if self.state not in vcr_states:
                 raise Exception("state must be one of ", vcr_states)
@@ -49,71 +52,8 @@ class VCRMiddleware:
             elif self.state == "recording":
                 self.cassette_json = json.loads("{}")
 
-        def matching_url_in_cassette(self, url, method):
-            matching_urls = [url_key for url_key in self.cassette_json.keys() if self.url_comparator(url_key, url)]
-            if len(matching_urls) > 0:
-                url_key = matching_urls[0]
-                return url_key
-            return None
-
-        def json_for_transaction(self, url, method, pop_transaction=False, transaction_to_add=None):
-            url_key = self.matching_url_in_cassette(url, method)
-            if url_key:
-                transactions_for_url = self.cassette_json[url_key]
-                method = method.upper()
-                transactions = transactions_for_url.get(method, None)
-                if transaction_to_add is not None:
-                    transactions.append(transaction_to_add)
-                    self.cassette_json[url_key][method] = transactions
-                    return transaction_to_add
-                else:
-                    if len(transactions) > 0:
-                        transaction = transactions.pop(0)
-                        if pop_transaction:
-                            # Push that change back to the JSON
-                            self.cassette_json[url_key][method] = transactions
-                        return transaction
-            elif transaction_to_add is not None:
-                self.cassette_json[url] = {method: [transaction_to_add]}
-            else:
-                return None
-
         def __init__(self):
             self.init_with_state("untitled_tape", "stopped")
-
-    def default_comparator(url1, url2):
-        # This default comparator ignores:
-        #     String case
-        #     GET parameters
-        #     Protocol (i.e. http/https)
-        #     Base URL
-        # If we start with:
-        #    https://website.com/API/v1/endpoint?param=value
-        #    http://staging.website.com/api/v1/endpoint?param=otherValue
-        # we compare:
-        #    api/v1/endpoint
-        #    api/v1/endpoint
-        # and return True, because they're "equal"
-
-        # Remove case
-        url1 = url1.lower()
-        url2 = url2.lower()
-
-        # Remove GET params
-        url1 = url1.split("?")[0]
-        url2 = url2.split("?")[0]
-
-        # Remove protocol
-        url1 = url1.split("//")[-1]
-        url2 = url2.split("//")[-1]
-
-        # Remove base URL (simple check: look for a '.' to see if this is a domain name)
-        if '.' in url1.split('/')[0]:
-            url1 = '/'.join(url1.split('/')[1:])
-        if '.' in url2.split('/')[0]:
-            url2 = '/'.join(url2.split('/')[1:])
-
-        return url1.lstrip('/').rstrip('/') == url2.lstrip('/').rstrip('/')
 
     shared_instance = None
     transaction_json = {"request": None, "response": None}
@@ -122,7 +62,7 @@ class VCRMiddleware:
     def inst(cls):
         if not cls.shared_instance:
             cls.shared_instance = cls.SharedInstance()
-            cls.shared_instance.set_url_comparator(cls.default_comparator)
+            cls.shared_instance.set_url_comparator(default_url_comparator)
         return cls.shared_instance
 
     @classmethod
@@ -142,48 +82,16 @@ class VCRMiddleware:
                 json.dump(cls.inst().cassette_json, cls.inst().cassette_file, indent=2)
                 cls.inst().cassette_file.close()
 
-    def json_for_request(self, request):
-        # Serialize request into JSON.
-        request_json = {}
-        if request.method == "POST":
-            body = dict(request.POST.items())
-        elif request.method == "GET":
-            body = dict(request.GET.items())
-        else:
-            body = request.body.decode("utf-8")
-
-        headers = {}
-        valid_headers = ['CONTENT_TYPE', 'HTTP_COOKIE', 'CONTENT_LENGTH', 'SERVER_PROTOCOL']
-        for header in valid_headers:
-            headers[header] = request.META[header]
-
-        request_json['body'] = body
-        request_json['method'] = request.method
-        request_json['headers'] = headers
-        request_json['url'] = request.get_full_path()
-        return request_json
-
-    def json_for_response(self, response, request):
-        # Serialize response into JSON
-        url = request.get_full_path()
-
-        response_json = {}
-        response_json['code'] = response.status_code
-        response_json['body'] = response.data
-        response_json['headers'] = dict(response.items())
-        response_json['url'] = url
-        return response_json
-
     def process_request(self, request):
         # If we're recording, we'll add this request to the cassette JSON.
         # If we're replaying, we'll short-cut the networking and return an HTTPResponse.
         if self.inst().state == "recording":
             # Reset transaction JSON:
             self.transaction_json = {"request": None, "response": None}
-            self.transaction_json['request'] = self.json_for_request(request)
+            self.transaction_json['request'] = json_for_request(request)
             return None
         elif self.inst().state == "replaying":
-            transaction_json = self.inst().json_for_transaction(request.get_full_path(), "POST", pop_transaction=True)
+            transaction_json = json_for_transaction(request.get_full_path(), "POST", self.cassette_json, self.url_comparator, pop_transaction=True)
             if transaction_json:
                 body = transaction_json['response']['body']
                 response = HttpResponse(body)
@@ -196,6 +104,6 @@ class VCRMiddleware:
         # If we're recording, we'll add this response to the cassette JSON.
         if self.inst().state == "recording":
             # Reset transaction JSON:
-            self.transaction_json['response'] = self.json_for_response(response, request)
-            self.inst().json_for_transaction(request.get_full_path(), request.method, transaction_to_add=self.transaction_json)
+            self.transaction_json['response'] = json_for_response(response, request)
+            json_for_transaction(request.get_full_path(), request.method, self.cassette_json, self.url_comparator, transaction_to_add=self.transaction_json)
         return response
