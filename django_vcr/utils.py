@@ -1,3 +1,6 @@
+import re
+
+
 def matching_url_in_cassette(url, method, cassette_json, url_comparator):
     matching_urls = [url_key for url_key in cassette_json.keys() if url_comparator(url_key, url)]
     if len(matching_urls) > 0:
@@ -63,7 +66,7 @@ def json_for_response(self, response, request):
     return response_json
 
 
-def default_url_comparator(url1, url2):
+def default_url_comparator(inst, url1, url2):
         # This default comparator ignores:
         #     String case
         #     GET parameters
@@ -96,3 +99,12 @@ def default_url_comparator(url1, url2):
             url2 = '/'.join(url2.split('/')[1:])
 
         return url1.lstrip('/').rstrip('/') == url2.lstrip('/').rstrip('/')
+
+
+def ordered_json(obj):
+    if isinstance(obj, dict):
+        return sorted((k, ordered_json(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return sorted(ordered_json(x) for x in obj)
+    else:
+        return obj

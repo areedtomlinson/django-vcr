@@ -3,7 +3,7 @@ import json
 from django.http import HttpResponse
 from django.conf import settings
 
-from utils import json_for_transaction, default_url_comparator, json_for_request, json_for_response
+from .utils import json_for_transaction, default_url_comparator, json_for_request, json_for_response
 
 
 class VCRMiddleware:
