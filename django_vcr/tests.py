@@ -151,33 +151,6 @@ class PlaybookTestCase(APITestCase):
             user_email = transaction['user_email']
             json = json_for_transaction(url, method, cassette_json, self.url_comparator, pop_transaction=True)
 
-            """
-        response = self.client.put(
-            reverse(
-                'api-order-list',
-                kwargs={'version': 'v1_1'}
-            ),
-            {
-                'number': order.number,
-                'naive_reservation_start': start_time_string,
-                'estimated_duration': 180,
-            }
-        )
-        self.assertEqual(response.status_code, 200)
-        order = Order.pending_objects.get(number=order.number)
-        expected_non_naive_start_datetime = market.time_zone.localize(datetime(2015, 5, 7, 10, 00))
-        self.assertEqual(order.localized_reservation_start, expected_non_naive_start_datetime)
-
-
-
-
-        for key in response.keys():
-            if response.get(key) is None or key == 'pricing' or key == 'ordernotes':
-                pass
-            else:
-                self.assertEqual(response.get(key), self.order_data_v1.get(key), "Values in key {} don't match.".format(key))
-
-            """
             response = self.make_request_from_json(json['request'], url, method, user_email)
             self.assert_taped_response(json['response'], response)
 
