@@ -1,3 +1,5 @@
+## OUTDATED: This package is maintained [here](https://github.com/bellhops/DjangoVCR)
+
 # django-vcr
 A Django-specific implementation of VCR. Ties in with iOS-VCR and Android-VCR.
 
